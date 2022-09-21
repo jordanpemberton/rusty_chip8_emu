@@ -74,6 +74,42 @@ impl Emulator {
         self.ram[..FONTSET_SIZE].copy_from_slice(&FONTSET);
     }
 
+    pub fn tick_timers(&mut self) {
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+
+        if self.sound_timer > 0 {
+            if self.sound_timer == 1 {
+                // BEEP
+                // TODO audio
+            }
+            self.sound_timer -= 1;
+        }
+    }
+
+    pub fn tick(&mut self) {
+        // Fetch
+        let opcode = self.fetch();
+
+        // Decode
+        // Execute
+    }
+
+    pub fn get_display(&self) -> &[bool] {
+        &self.screen
+    }
+
+    pub fn keypress(&mut self, index: usize, is_pressed: bool) {
+        self.keys[index] = is_pressed;
+    }
+
+    pub fn load(&mut self, data: &[u8]) {
+        let start = START_ADDR as usize;
+        let end = (START_ADDR as usize) + data.len();
+        self.ram[start..end].copy_from_slice(data);
+    }
+
     fn push(&mut self, value: u16) {
         self.stack[self.stack_pointer as usize] = value;
         self.stack_pointer += 1;
@@ -88,7 +124,7 @@ impl Emulator {
     // Values are stored in RAM as 8-bit values, so we fetch two,
     // and combine them as Big Endian, then increment PC by 2 bytes.
     pub fn fetch(&mut self) -> u16 {
-        let higher_byte = self.ram[self.program_counter as usize] as u16;
+        let higher_byte = self.ram[self.program_counter as usize] as u16; // panic out of bounds error here
         let lower_byte = self.ram[(self.program_counter + 1) as usize] as u16;
         let operation = (higher_byte << 8) | lower_byte;
         self.program_counter += 2;
@@ -438,27 +474,5 @@ impl Emulator {
 
             (_, _, _, _) => unimplemented!("Unimplemented opcode: {}", opcode)
         }
-    }
-
-    pub fn tick_timers(&mut self) {
-        if self.delay_timer > 0 {
-            self.delay_timer -= 1;
-        }
-        
-        if self.sound_timer > 0 {
-            if self.sound_timer == 1 {
-                // BEEP
-                // TODO audio
-            }
-            self.sound_timer -= 1;
-        }
-    }    
-
-    pub fn tick(&mut self) {
-        // Fetch
-        let opcode = self.fetch();
-
-        // Decode
-        // Execute
     }
 }
