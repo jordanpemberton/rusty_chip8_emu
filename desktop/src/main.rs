@@ -35,6 +35,28 @@ fn draw_screen(emulator: &Emulator, canvas: &mut Canvas<Window>) {
     canvas.present();
 }
 
+fn key_input(key: Keycode) -> Option<usize> {
+    match key {
+        Keycode::X => Some(0x0),
+        Keycode::Num1 => Some(0x1),
+        Keycode::Num2 => Some(0x2),
+        Keycode::Num3 => Some(0x3),
+        Keycode::Q => Some(0x4),
+        Keycode::W => Some(0x5),
+        Keycode::E => Some(0x6),
+        Keycode::A => Some(0x7),
+        Keycode::S => Some(0x8),
+        Keycode::D => Some(0x9),
+        Keycode::Z => Some(0xA),
+        Keycode::C => Some(0xB),
+        Keycode::Num4 => Some(0xC),
+        Keycode::R => Some(0xD),
+        Keycode::F => Some(0xE),
+        Keycode::V => Some(0xF),
+        _ => None
+    }
+}
+
 fn graphics(args: Vec<String>) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -62,10 +84,19 @@ fn graphics(args: Vec<String>) {
     'gameloop: loop {
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. } => {
+                Event::Quit {..} | Event::KeyDown{keycode: Some(Keycode::Escape), ..} => {
                     break 'gameloop;
                 },
-                // TODO - key inputs
+                Event::KeyDown{keycode: Some(key), ..} => {
+                    if let Some(k) = key_input(key) {
+                        chip8.keypress(k, true);
+                    }
+                },
+                Event::KeyUp{keycode: Some(key), ..} => {
+                    if let Some(k) = key_input(key) {
+                        chip8.keypress(k, false);
+                    }
+                }
                 _ => ()
             }
         }
