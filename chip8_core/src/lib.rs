@@ -346,13 +346,41 @@ impl Emulator {
             self.ireg = c * 5; // multiplied by 5 because each font occupies 5 bytes
     }
 
+    fn easy_to_read_bcd(x: f32) -> [u8; 3] {
+        let hundreds = (x / 100.0).floor() as u8;
+        let tens = ((x / 10.0) % 10.0).floor() as u8;
+        let ones = (x % 10.0) as u8;
+        [hundreds, tens, ones]
+    }
+
     // FX33
     // Store BCD encoding of VX into I, inclusive.
-    fn store_bcd_vx_into_i(&mut self) {}
+    /// BCD = Binary-Coded Decimal, to convert hex back into decimal.
+    fn load_bcd_vreg_into_ireg(&mut self, which_vreg: usize) {
+        let vx = self.vreg[which_vreg] as f32;
+
+        let [hundreds, tens, ones] = Emulator::easy_to_read_bcd(vx);
+
+        self.ram[self.ireg as usize] = hundreds;
+        self.ram[(self.ireg + 1) as usize] = tens;
+        self.ram[(self.ireg + 2) as usize] = ones;
+    }
+
+    // FX55
+    // Load V0 through VX into I
+    fn load_vreg_into_ireg(&mut self, n: usize) {
+        for i in 0..=n {
+            self.ram[self.ireg as usize + i] = self.vreg[i];
+        }
+    }
 
     // FX65
-    // Fill V0 thru VX with RAM values starting at address 1, inclusive.
-
+    // Load I into V0 thru VX with RAM values starting at address 1, inclusive.
+    fn load_ireg_into_vreg(&mut self, n: usize) {
+        for i in 0..=n {
+            self.vreg[i] = self.ram[self.ireg as usize + i]
+        }
+    }
 
     // Execute the opcode.
     fn execute(&mut self, opcode: u16) {
@@ -404,7 +432,9 @@ impl Emulator {
             (0xF, _, 1, 8) => Emulator::set_sound_timer(self, digit2 as usize),
             (0xF, _, 1, 0xE) => Emulator::add_to_ireg(self, digit2 as usize),
             (0xF, _, 2, 9) => Emulator::set_ireg_to_font_address(self, digit2 as usize),
-
+            (0xF, _, 3, 3) => Emulator::load_bcd_vreg_into_ireg(self, digit2 as usize),
+            (0xF, _, 5, 5) => Emulator::load_vreg_into_ireg(self, digit2 as usize),
+            (0xF, _, 6, 5) => Emulator::load_ireg_into_vreg(self, digit2 as usize),
 
             (_, _, _, _) => unimplemented!("Unimplemented opcode: {}", opcode)
         }
@@ -430,21 +460,5 @@ impl Emulator {
 
         // Decode
         // Execute
-    }
-}
-
-
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
     }
 }
