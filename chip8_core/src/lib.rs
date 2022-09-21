@@ -1,4 +1,4 @@
-use rand::random;
+use rand::Rng;
 
 pub const SCREEN_WIDTH: usize = 64;
 pub const SCREEN_HEIGHT: usize = 32;
@@ -74,6 +74,20 @@ impl Emulator {
         self.ram[..FONTSET_SIZE].copy_from_slice(&FONTSET);
     }
 
+    pub fn get_display(&self) -> &[bool] {
+        &self.screen
+    }
+
+    pub fn keypress(&mut self, index: usize, is_pressed: bool) {
+        self.keys[index] = is_pressed;
+    }
+
+    pub fn load(&mut self, data: &[u8]) {
+        let start = START_ADDR as usize;
+        let end = (START_ADDR as usize) + data.len();
+        self.ram[start..end].copy_from_slice(data);
+    }
+
     pub fn tick_timers(&mut self) {
         if self.delay_timer > 0 {
             self.delay_timer -= 1;
@@ -92,22 +106,8 @@ impl Emulator {
         // Fetch
         let opcode = self.fetch();
 
-        // Decode
-        // Execute
-    }
-
-    pub fn get_display(&self) -> &[bool] {
-        &self.screen
-    }
-
-    pub fn keypress(&mut self, index: usize, is_pressed: bool) {
-        self.keys[index] = is_pressed;
-    }
-
-    pub fn load(&mut self, data: &[u8]) {
-        let start = START_ADDR as usize;
-        let end = (START_ADDR as usize) + data.len();
-        self.ram[start..end].copy_from_slice(data);
+        // Decode // Execute
+        self.execute(opcode);
     }
 
     fn push(&mut self, value: u16) {
@@ -123,8 +123,8 @@ impl Emulator {
     // fetch 16-bit opcode stored at current Program Counter.
     // Values are stored in RAM as 8-bit values, so we fetch two,
     // and combine them as Big Endian, then increment PC by 2 bytes.
-    pub fn fetch(&mut self) -> u16 {
-        let higher_byte = self.ram[self.program_counter as usize] as u16; // panic out of bounds error here
+    fn fetch(&mut self) -> u16 {
+        let higher_byte = self.ram[self.program_counter as usize] as u16;
         let lower_byte = self.ram[(self.program_counter + 1) as usize] as u16;
         let operation = (higher_byte << 8) | lower_byte;
         self.program_counter += 2;
@@ -186,7 +186,7 @@ impl Emulator {
     // Need to account for the case of overflow, so can't use addition operation.
     // Note that the Chip8 carry flag is not modified by this operation.
     fn wrapping_add(&mut self, which_vreg: usize, value: u8) {
-        self.vreg[which_vreg] = self.vreg[which_vreg].wrapping_add(value); // ?
+        self.vreg[which_vreg] = self.vreg[which_vreg].wrapping_add(value);
     }
 
     // 8XY0
@@ -205,7 +205,7 @@ impl Emulator {
     }
 
     // 8XY3
-    fn bitwise_not(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
+    fn bitwise_xor(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
         self.vreg[which_vreg_target] ^= self.vreg[which_vreg_source];
     }
 
@@ -217,7 +217,7 @@ impl Emulator {
         let flag = if carry { 1 } else { 0 };
 
         self.vreg[which_vreg_target] = value;
-        self.vreg[0xF] = flag; // vreg[16]?, the final 16th (0xf) register holds the flag register
+        self.vreg[0xF] = flag; // same as vreg[16]?, the final 16th (0xf) register holds the flag register
     }
 
     // 8XY5
@@ -241,6 +241,13 @@ impl Emulator {
 
     // 8XY7
     // Overflowing subtract but flipped, Clear VF if borrow
+    fn overflowing_subtract_flipped(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
+        let (value, borrow) = self.vreg[which_vreg_source].overflowing_sub(self.vreg[which_vreg_target]);
+        let flag = if borrow { 0 } else { 1 };
+
+        self.vreg[which_vreg_target] = value;
+        self.vreg[0xF] = flag; // vreg[16]?, the final 16th (0xf) register holds the flag register
+    }
 
     // 8XYE
     // Left shift and store dropped bit in VF
@@ -274,13 +281,13 @@ impl Emulator {
     // CXNN
     // VX = rand() & 0xNN
     fn set_to_rand(&mut self, which_vreg: usize, value: u8) {
-        let rng: u8 = random();
+        let rng: u8 = rand::thread_rng().gen(); // random();
         self.vreg[which_vreg] = rng & value;
     }
 
     // DXYN
     // Draw sprite at (VX, VY)
-    fn draw_sprite(&mut self, which_vreg_x: usize, which_vreg_y: usize, num_rows: usize) {
+    fn draw_sprite(&mut self, which_vreg_x: usize, which_vreg_y: usize, num_rows: u16) {
         let x_coord = self.vreg[which_vreg_x] as u16;
         let y_coord = self.vreg[which_vreg_y] as u16;
         let mut flipped = false;
@@ -289,10 +296,10 @@ impl Emulator {
             let address = self.ireg + y_line as u16;
             let pixels = self.ram[address as usize];
 
-            for x_line in 0..8 as usize {
+            for x_line in 0..8 {
                 if (pixels & (0b1000_0000 >> x_line)) != 0 {
-                    let x = x_coord as usize + x_line % SCREEN_WIDTH;
-                    let y = y_coord as usize + y_line % SCREEN_HEIGHT;
+                    let x = (x_coord + x_line) as usize % SCREEN_WIDTH;
+                    let y = (y_coord + y_line) as usize % SCREEN_HEIGHT;
 
                     let index = x + SCREEN_WIDTH * y;
 
@@ -405,16 +412,18 @@ impl Emulator {
     // FX55
     // Load V0 through VX into I
     fn load_vreg_into_ireg(&mut self, n: usize) {
+        let start_address = self.ireg as usize;
         for i in 0..=n {
-            self.ram[self.ireg as usize + i] = self.vreg[i];
+            self.ram[start_address + i] = self.vreg[i];
         }
     }
 
     // FX65
     // Load I into V0 thru VX with RAM values starting at address 1, inclusive.
     fn load_ireg_into_vreg(&mut self, n: usize) {
+        let start_address = self.ireg as usize;
         for i in 0..=n {
-            self.vreg[i] = self.ram[self.ireg as usize + i]
+            self.vreg[i] = self.ram[start_address + i]
         }
     }
 
@@ -423,31 +432,29 @@ impl Emulator {
         let digit1 = (opcode & 0xF000) >> 12;
         let digit2 = (opcode & 0x0F00) >> 8;
         let digit3 = (opcode & 0x00F0) >> 4;
-        let digit4 = (opcode & 0x000F);
+        let digit4 = opcode & 0x000F;
 
-        match (digit2, digit2, digit3, digit4) {
+        match (digit1, digit2, digit3, digit4) {
             (0, 0, 0, 0) => return,
             (0, 0, 0xE, 0) => Emulator::clear_screen(self),
             (0, 0, 0xE, 0xE) => Emulator::return_from_subroutine(self),
 
             (1, _, _, _) => Emulator::jump_to(self, opcode & 0xFFF),
             (2, _, _, _) => Emulator::call(self, opcode & 0xFFF),
-
             (3, _, _, _) => Emulator::skip_if_same(self, digit2 as usize, (opcode & 0xFF) as u8),
             (4, _, _, _) => Emulator::skip_if_diff(self, digit2 as usize, (opcode & 0xFF) as u8),
             (5, _, _, _) => Emulator::skip_if_same_compare(self, digit2 as usize, digit3 as usize),
-
             (6, _, _, _) => Emulator::set_vreg(self, digit2 as usize, (opcode & 0xFF) as u8),
             (7, _, _, _) => Emulator::wrapping_add(self, digit2 as usize, (opcode & 0xFF) as u8),
 
             (8, _, _, 0) => Emulator::set_from_vreg(self, digit2 as usize, digit3 as usize),
             (8, _, _, 1) => Emulator::bitwise_or(self, digit2 as usize, digit3 as usize),
             (8, _, _, 2) => Emulator::bitwise_and(self, digit2 as usize, digit3 as usize),
-            (8, _, _, 3) => Emulator::bitwise_not(self, digit2 as usize, digit3 as usize),
+            (8, _, _, 3) => Emulator::bitwise_xor(self, digit2 as usize, digit3 as usize),
             (8, _, _, 4) => Emulator::overflowing_add(self, digit2 as usize, digit3 as usize),
             (8, _, _, 5) => Emulator::overflowing_subtract(self, digit2 as usize, digit3 as usize),
             (8, _, _, 6) => Emulator::rightshift(self, digit2 as usize),
-            (8, _, _, 7) => Emulator::overflowing_subtract(self, digit3 as usize, digit2 as usize),
+            (8, _, _, 7) => Emulator::overflowing_subtract_flipped(self, digit3 as usize, digit2 as usize),
             (8, _, _, 0xE) => Emulator::leftshift(self, digit3 as usize),
 
             (9, _, _, 0) => Emulator::skip_if_diff_compare(self, digit2 as usize, digit3 as usize),
@@ -458,13 +465,14 @@ impl Emulator {
 
             (0xC, _, _, _) => Emulator::set_to_rand(self, digit2 as usize, (opcode & 0xFF) as u8),
 
-            (0xD, _, _, _) => Emulator::draw_sprite(self, digit2 as usize, digit3 as usize, digit4 as usize),
+            (0xD, _, _, _) => Emulator::draw_sprite(self, digit2 as usize, digit3 as usize, digit4 as u16),
 
             (0xE, _, 9, 0xE) => Emulator::skip_if_key(self, digit2 as usize),
             (0xE, _, 0xA, 1) => Emulator::skip_if_not_key(self, digit2 as usize),
 
             (0xF, _, 0, 7) => Emulator::set_vreg_to_delay_timer(self, digit2 as usize),
             (0xF, _, 0, 0xA) => Emulator::wait_for_key(self, digit2 as usize),
+            (0xF, _, 1, 5) => Emulator::set_delay_timer(self, digit2 as usize),
             (0xF, _, 1, 8) => Emulator::set_sound_timer(self, digit2 as usize),
             (0xF, _, 1, 0xE) => Emulator::add_to_ireg(self, digit2 as usize),
             (0xF, _, 2, 9) => Emulator::set_ireg_to_font_address(self, digit2 as usize),
@@ -472,7 +480,7 @@ impl Emulator {
             (0xF, _, 5, 5) => Emulator::load_vreg_into_ireg(self, digit2 as usize),
             (0xF, _, 6, 5) => Emulator::load_ireg_into_vreg(self, digit2 as usize),
 
-            (_, _, _, _) => unimplemented!("Unimplemented opcode: {}", opcode)
+            (_, _, _, _) => unimplemented!("Unimplemented opcode: {:x} ({:x} {:x} {:x} {:x})", opcode, digit1, digit2, digit3, digit4)
         }
     }
 }

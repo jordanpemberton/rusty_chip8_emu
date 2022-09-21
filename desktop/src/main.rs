@@ -1,16 +1,20 @@
 use chip8_core::*;
+
 use std::env;
+use std::fs::File;
+use std::io::Read;
+
 use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
-use std::fs::File;
-use std::io::Read;
 
 const SCALE: u32 = 15;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
+const TICKS_PER_FRAME: usize = 10;
 
 fn draw_screen(emulator: &Emulator, canvas: &mut Canvas<Window>) {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
@@ -51,8 +55,8 @@ fn graphics(args: Vec<String>) {
 
     let mut rom = File::open(&args[1]).expect("Unable to open file :(");
     let mut buffer: Vec<u8> = Vec::new();
-    rom.read_to_end(&mut buffer).unwrap();
 
+    rom.read_to_end(&mut buffer).unwrap();
     chip8.load(&buffer);
 
     'gameloop: loop {
@@ -61,13 +65,17 @@ fn graphics(args: Vec<String>) {
                 Event::Quit { .. } => {
                     break 'gameloop;
                 },
+                // TODO - key inputs
                 _ => ()
             }
         }
 
-        chip8.tick();
+        for _ in 0..TICKS_PER_FRAME {
+            chip8.tick();
+        }
+        chip8.tick_timers();
 
-        (&chip8, &mut canvas);
+        draw_screen(&chip8, &mut canvas);
     }
 }
 
@@ -79,5 +87,4 @@ fn main() {
     }
 
     graphics(args);
-
 }
