@@ -8,7 +8,7 @@ const NUM_REGS: usize = 16;
 const STACK_SIZE: usize = 16;
 const NUM_KEYS: usize = 16;
 const FONTSET_SIZE: usize = 80;
-const START_ADDR: u16 = 0x200;  // first 512 addresses are left empty, can be used to store sprite data for font charaters.
+const START_ADDR: u16 = 0x200;  // first 512 addresses are left empty, can be used to store sprite data for font characters.
 
 const FONTSET: [u8; FONTSET_SIZE] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0
@@ -297,7 +297,7 @@ impl Emulator {
             let pixels = self.ram[address as usize];
 
             for x_line in 0..8 {
-                if (pixels & (0b1000_0000 >> x_line)) != 0 {
+                if (pixels & (0b10000000 >> x_line)) != 0 {
                     let x = (x_coord + x_line) as usize % SCREEN_WIDTH;
                     let y = (y_coord + y_line) as usize % SCREEN_HEIGHT;
 
@@ -385,8 +385,8 @@ impl Emulator {
     // FX29
     // Set i to address of font character in VX
     fn set_ireg_to_font_address(&mut self, which_vreg: usize) {
-            let c = self.vreg[which_vreg] as u16;
-            self.ireg = c * 5; // multiplied by 5 because each font occupies 5 bytes
+        let c = self.vreg[which_vreg] as u16;
+        self.ireg = c * 5; // multiplied by 5 because each font occupies 5 bytes
     }
 
     fn easy_to_read_bcd(x: f32) -> [u8; 3] {
