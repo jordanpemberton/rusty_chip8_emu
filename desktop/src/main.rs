@@ -5,10 +5,11 @@ use std::fs::File;
 use std::io::Read;
 
 use sdl2::event::Event;
+use sdl2::{EventPump, Sdl};
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::render::Canvas;
+use sdl2::render::{Canvas, WindowCanvas};
 use sdl2::video::Window;
 
 const SCALE: u32 = 15;
@@ -16,7 +17,7 @@ const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const TICKS_PER_FRAME: usize = 10;
 
-fn draw_screen(emulator: &Emulator, canvas: &mut Canvas<Window>) {
+fn draw_screen(emulator: &mut Emulator, canvas: &mut Canvas<Window>) {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
@@ -35,7 +36,7 @@ fn draw_screen(emulator: &Emulator, canvas: &mut Canvas<Window>) {
     canvas.present();
 }
 
-fn key_input(key: Keycode) -> Option<usize> {
+fn translate_key_input(key: Keycode) -> Option<usize> {
     match key {
         Keycode::Num1 => Some(0x1),
         Keycode::Num2 => Some(0x2),
@@ -61,8 +62,7 @@ fn key_input(key: Keycode) -> Option<usize> {
     }
 }
 
-fn graphics(game_path: &str) {
-    let sdl_context = sdl2::init().unwrap();
+fn setup_canvas(sdl_context: &Sdl) -> WindowCanvas {
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
         .window("Chip-8 Emulator", WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -71,12 +71,18 @@ fn graphics(game_path: &str) {
         .build()
         .unwrap();
 
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+    let mut canvas = window
+        .into_canvas()
+        .present_vsync()
+        .build()
+        .unwrap();
+
     canvas.clear();
     canvas.present();
+    canvas
+}
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
-
+fn load_game(game_path: &str) -> Emulator {
     let mut chip8 = Emulator::new();
 
     let mut rom = File::open(game_path).expect("Unable to open file :(");
@@ -84,21 +90,25 @@ fn graphics(game_path: &str) {
 
     rom.read_to_end(&mut buffer).unwrap();
     chip8.load(&buffer);
+    chip8
+}
 
+fn main_loop(chip8: &mut Emulator, event_pump: &mut EventPump, canvas: &mut WindowCanvas) {
     'gameloop: loop {
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit {..} | Event::KeyDown{keycode: Some(Keycode::Escape), ..} => {
+                Event::Quit {..}
+                    | Event::KeyDown{keycode: Some(Keycode::Escape), ..} => {
                     break 'gameloop;
                 },
                 Event::KeyDown{keycode: Some(key), ..} => {
-                    if let Some(k) = key_input(key) {
-                        chip8.keypress(k, true);
+                    if let Some(chip8_input) = translate_key_input(key) {
+                        chip8.keypress(chip8_input, true);
                     }
                 },
                 Event::KeyUp{keycode: Some(key), ..} => {
-                    if let Some(k) = key_input(key) {
-                        chip8.keypress(k, false);
+                    if let Some(chip8_input) = translate_key_input(key) {
+                        chip8.keypress(chip8_input, false);
                     }
                 }
                 _ => ()
@@ -110,7 +120,7 @@ fn graphics(game_path: &str) {
         }
         chip8.tick_timers();
 
-        draw_screen(&chip8, &mut canvas);
+        draw_screen(chip8, canvas);
     }
 }
 
@@ -121,5 +131,11 @@ fn main() {
         return;
     }
 
-    graphics(&args[1]);
+    let sdl_context = sdl2::init().unwrap();
+
+    let mut canvas = setup_canvas(&sdl_context);
+    let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut game = load_game(&args[1]);
+
+    main_loop(&mut game, &mut event_pump, &mut canvas);
 }
