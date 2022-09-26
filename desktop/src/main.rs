@@ -1,7 +1,7 @@
 use chip8_core::*;
 
 use std::env;
-use std::fs::File;
+use std::fs;
 use std::io::Read;
 
 use sdl2::event::Event;
@@ -83,13 +83,20 @@ fn setup_canvas(sdl_context: &Sdl) -> WindowCanvas {
     canvas
 }
 
-fn select_game(games_folder_path: &str) -> &str {
+fn select_game(games_folder_path: &str) -> String {
     // TODO: Display numbered folder contents
+    let games = fs::read_dir(games_folder_path).unwrap();
+    for game in games {
+        println!("{}", game.unwrap().path().display());
+    }
 
     // TODO: Accept input to select a game
 
-    // TEMP
-    "15PUZZLE"
+    // TEMP dummy code
+    let mut game_full_path = String::from(games_folder_path);
+    game_full_path.push_str("15PUZZLE");
+
+    game_full_path
 }
 
 fn load_game(game_path: &str) -> Emulator {
@@ -98,7 +105,7 @@ fn load_game(game_path: &str) -> Emulator {
     let mut msg = String::from("Unable to open file. Provided path was ");
     msg.push_str(game_path);
 
-    let mut rom = File::open(game_path).expect(&*msg);
+    let mut rom = fs::File::open(game_path).expect(&*msg);
     let mut buffer = Vec::new();
 
     rom.read_to_end(&mut buffer).unwrap();
@@ -140,25 +147,21 @@ fn main_loop(chip8: &mut Emulator, event_pump: &mut EventPump, canvas: &mut Wind
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut games_folder_path = if args.len() > 1 { args[1].clone() }
+    let mut games_folder_path: String = if args.len() > 1 { args[1].clone() }
         else { DEFAULT_GAMES_FOLDER_PATH.to_string() };
     if !games_folder_path.ends_with('/') {
         games_folder_path.push('/');
     }
 
-    let mut game_full_path = games_folder_path.clone();
-
-    let game_relative_path = select_game(games_folder_path.as_str());
-
-    game_full_path.push_str(game_relative_path);
+    let game_full_path: String = select_game(games_folder_path.as_str());
 
     if !game_full_path.is_empty() {
-        let sdl_context = sdl2::init().unwrap();
+        let sdl_context: Sdl = sdl2::init().unwrap();
 
-        let mut canvas = setup_canvas(&sdl_context);
-        let mut event_pump = sdl_context.event_pump().unwrap();
+        let mut canvas: WindowCanvas = setup_canvas(&sdl_context);
+        let mut event_pump: EventPump = sdl_context.event_pump().unwrap();
 
-        let mut game = load_game(game_full_path.as_str());
+        let mut game: Emulator = load_game(game_full_path.as_str());
 
         main_loop(&mut game, &mut event_pump, &mut canvas);
     }
