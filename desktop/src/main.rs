@@ -89,7 +89,7 @@ fn load_game(game_path: &str) -> Emulator {
     let mut buffer = Vec::new();
 
     rom.read_to_end(&mut buffer).unwrap();
-    chip8.load(&buffer);
+    chip8.load_data(&buffer);
     chip8
 }
 

@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use rand::Rng;
 
 pub const SCREEN_WIDTH: usize = 64;
@@ -8,7 +10,7 @@ const NUM_REGS: usize = 16;
 const STACK_SIZE: usize = 16;
 const NUM_KEYS: usize = 16;
 const FONTSET_SIZE: usize = 80;
-const START_ADDR: u16 = 0x200;  // first 512 addresses are left empty, can be used to store sprite data for font characters.
+const START_ADDR: usize = 0x200;  // First 512 addresses are left empty, can be used to store sprite data for font characters.
 
 const FONTSET: [u8; FONTSET_SIZE] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0
@@ -30,64 +32,91 @@ const FONTSET: [u8; FONTSET_SIZE] = [
 ];
 
 pub struct Emulator {
-    program_counter: u16,
-    ram: [u8; RAM_SIZE],
-    screen: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
+    screen_changed: bool,
+    delay_timer: u8,
+    sound_timer: u8,
+    program_counter: usize,
+    stack_pointer: usize,
+    ireg: usize,
     vreg: [u8; NUM_REGS],
-    ireg: u16,
-    stack_pointer: u16,
     stack: [u16; STACK_SIZE],
     keys: [bool; NUM_KEYS],
-    delay_timer: u8,
-    sound_timer: u8
+    ram: [u8; RAM_SIZE],
+    screen: [bool; SCREEN_WIDTH * SCREEN_HEIGHT]
 }
 
 impl Emulator {
     pub fn new() -> Self {
         let mut emulator = Self {
+            screen_changed: false,
+            delay_timer: 0,
+            sound_timer: 0,
             program_counter: START_ADDR,
-            ram: [0; RAM_SIZE],
-            screen: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
-            vreg: [0; NUM_REGS],
-            ireg: 0,
             stack_pointer: 0,
+            ireg: 0,
+            vreg: [0; NUM_REGS],
             stack: [0; STACK_SIZE],
             keys: [false; NUM_KEYS],
-            delay_timer: 0,
-            sound_timer: 0
+            ram: [0; RAM_SIZE],
+            screen: [false; SCREEN_WIDTH * SCREEN_HEIGHT]
         };
         emulator.ram[..FONTSET_SIZE].copy_from_slice(&FONTSET);
         emulator
     }
 
     pub fn reset(&mut self) {
-        self.program_counter = START_ADDR;
-        self.ram = [0; RAM_SIZE];
-        self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
-        self.vreg = [0; NUM_REGS];
-        self.ireg = 0;
-        self.stack_pointer = 0;
-        self.stack = [0; STACK_SIZE];
-        self.keys = [false; NUM_KEYS];
+        self.screen_changed = false;
         self.delay_timer = 0;
         self.sound_timer = 0;
+        self.program_counter = START_ADDR;
+        self.stack_pointer = 0;
+        self.ireg = 0;
+        self.vreg = [0; NUM_REGS];
+        self.stack = [0; STACK_SIZE];
+        self.ram = [0; RAM_SIZE];
+        self.keys = [false; NUM_KEYS];
         self.ram[..FONTSET_SIZE].copy_from_slice(&FONTSET);
+        self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
     }
 
     pub fn get_display(&self) -> &[bool] {
         &self.screen
     }
 
-    pub fn keypress(&mut self, index: usize, is_pressed: bool) {
-        self.keys[index] = is_pressed;
-    }
-
-    pub fn load(&mut self, data: &[u8]) {
-        let start = START_ADDR as usize;
-        let end = (START_ADDR as usize) + data.len();
+    pub fn load_data(&mut self, data: &[u8]) {
+        let start = START_ADDR;
+        let end = (START_ADDR) + data.len();
         self.ram[start..end].copy_from_slice(data);
     }
 
+    fn push(&mut self, value: u16) {
+        self.stack[self.stack_pointer] = value;
+        self.stack_pointer += 1;
+    }
+
+    fn pop(&mut self) -> u16 {
+        self.stack_pointer -= 1;
+        self.stack[self.stack_pointer]
+    }
+
+    pub fn keypress(&mut self, ki: usize, is_pressed: bool) {
+        self.keys[ki] = is_pressed;
+    }
+
+    // FETCH 16-bit opcode stored at current Program Counter.
+    // Values are stored in RAM as 8-bit values, so we fetch two,
+    // and combine them as Big Endian, then increment PC by 2 bytes.
+    fn fetch_opcode(&mut self) -> u16 {
+        let higher_byte = self.ram[self.program_counter] as u16;
+        let lower_byte = self.ram[(self.program_counter + 1)] as u16;
+        let opcode = (higher_byte << 8) | lower_byte;
+
+        self.program_counter += 2;
+
+        opcode
+    }
+
+    // TICK
     pub fn tick_timers(&mut self) {
         if self.delay_timer > 0 {
             self.delay_timer -= 1;
@@ -95,312 +124,367 @@ impl Emulator {
 
         if self.sound_timer > 0 {
             if self.sound_timer == 1 {
-                // BEEP
-                // TODO audio
+                // BEEP // TODO audio
             }
             self.sound_timer -= 1;
         }
     }
 
     pub fn tick(&mut self) {
-        // Fetch
-        let opcode = self.fetch();
-
-        // Decode // Execute
+        self.screen_changed = false;
+        let opcode = self.fetch_opcode();
         self.execute(opcode);
     }
 
-    fn push(&mut self, value: u16) {
-        self.stack[self.stack_pointer as usize] = value;
-        self.stack_pointer += 1;
+    // EXECUTE the opcode.
+    fn execute(&mut self, opcode: u16) {
+        let nibbles = (
+            (opcode & 0xF000) >> 12 as u8,
+            (opcode & 0x0F00) >> 8 as u8,
+            (opcode & 0x00F0) >> 4 as u8,
+            (opcode & 0x000F) as u8
+        );
+
+        let nnn = (opcode & 0x0FFF) as usize;
+        let kk = (opcode & 0x00FF) as u8;
+        let x = nibbles.1 as usize;
+        let y = nibbles.2 as usize;
+        let n = nibbles.3 as usize;
+
+        match nibbles {
+            (0, 0, 0, 0) => return,
+            (0, 0, 0xE, 0) => self.op_00E0_cls(),
+            (0, 0, 0xE, 0xE) => self.op_00EE_ret(),
+            (1, _, _, _) => self.op_1NNN_jmp(nnn),
+            (2, _, _, _) => self.op_2NNN_call(nnn),
+            (3, _, _, _) => self.op_3XKK_se_vx_kk(x, kk),
+            (4, _, _, _) => self.op_4XKK_sne_vx_kk(x, kk),
+            (5, _, _, 0) => self.op_5XY0_se_vx_vy(x, y),
+            (6, _, _, _) => self.op_6XKK_ld_vx_kk(x, kk),
+            (7, _, _, _) => self.op_7XKK_add_vx_kk(x, kk),
+            (8, _, _, 0) => self.op_8XY0_ld_vx_vy(x, y),
+            (8, _, _, 1) => self.op_8XY1_or_vx_vy(x, y),
+            (8, _, _, 2) => self.op_8XY2_and_vx_vy(x, y),
+            (8, _, _, 3) => self.op_8XY3_xor_vx_vy(x, y),
+            (8, _, _, 4) => self.op_8XY4_add_vx_vy(x, y),
+            (8, _, _, 5) => self.op_8XY5_sub_vx_vy(x, y),
+            (8, _, _, 6) => self.op_8XY6_shr_vx(x),
+            (8, _, _, 7) => self.op_8XY7_subn_vx_vy(y, x),
+            (8, _, _, 0xE) => self.op_8XYE_shl_vx(x),
+            (9, _, _, 0) => self.op_9XY0_sne_vx_vy(x, y),
+            (0xA, _, _, _) => self.op_ANNN_ld_i_nnn(nnn),
+            (0xB, _, _, _) => self.op_BNNN_jmp_v0_nnn(nnn),
+            (0xC, _, _, _) => self.op_CXKK_ld_vx_rand_and_kk(y, kk),
+            (0xD, _, _, _) => self.op_DXYN_drw(x, y, n),
+            (0xE, _, 9, 0xE) => self.op_EX9E_skp_vx(x),
+            (0xE, _, 0xA, 1) => self.op_EXA1_sknp_vx(x),
+            (0xF, _, 0, 7) => self.op_FX07_ld_vx_dt(x),
+            (0xF, _, 0, 0xA) => self.op_FX0A_ld_vx_key(x),
+            (0xF, _, 1, 5) => self.op_FX15_ld_dt_vx(x),
+            (0xF, _, 1, 8) => self.op_FX18_ld_st_vx(x),
+            (0xF, _, 1, 0xE) => self.op_FX1E_add_i_vx(x),
+            (0xF, _, 2, 9) => self.op_FX29_ld_d_vx(x),
+            (0xF, _, 3, 3) => self.op_FX33_ld_b_vx(x),
+            (0xF, _, 5, 5) => self.op_FX55_ld_i_vx(x),
+            (0xF, _, 6, 5) => self.op_FX65_ld_vx_i(x),
+            (_, _, _, _) => unimplemented!("Unimplemented opcode: {:?})", nibbles)
+        }
     }
 
-    fn pop(&mut self) -> u16 {
-        self.stack_pointer -= 1;
-        self.stack[self.stack_pointer as usize]
-    }
+    // ======================== OPCODE INSTRUCTIONS ========================
+    // nnn or addr - A 12-bit value, the lowest 12 bits of the instruction
+    // n or nibble - A 4-bit value, the lowest 4 bits of the instruction
+    // x - A 4-bit value, the lower 4 bits of the high byte of the instruction
+    // y - A 4-bit value, the upper 4 bits of the low byte of the instruction
+    // kk or byte - An 8-bit value, the lowest 8 bits of the instruction
 
-    // fetch 16-bit opcode stored at current Program Counter.
-    // Values are stored in RAM as 8-bit values, so we fetch two,
-    // and combine them as Big Endian, then increment PC by 2 bytes.
-    fn fetch(&mut self) -> u16 {
-        let higher_byte = self.ram[self.program_counter as usize] as u16;
-        let lower_byte = self.ram[(self.program_counter + 1) as usize] as u16;
-        let operation = (higher_byte << 8) | lower_byte;
-        self.program_counter += 2;
-        operation
-    }
+    /// 000 - NOP
+    /// No op, do nothing
 
-    // 00E0 Clear screen
-    fn clear_screen(&mut self) {
+    // 0NNN - SYS addr
+    // Jump to machine code routine at NNN. Ignored by modern interpreters.
+
+    // 00E0 - CLS
+    // Clear screen
+    fn op_00E0_cls(&mut self) {
         self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
+        self.screen_changed = true;
     }
 
-    // 00EE
-    fn return_from_subroutine(&mut self) {
-        let return_address = self.pop();
-        self.program_counter = return_address;
+    // 00EE - RET
+    // Return from subroutine (set program counter to the address at the top of the stack).
+    fn op_00EE_ret(&mut self) {
+        self.program_counter = self.pop() as usize;
     }
 
-    // 1NNN
-    fn jump_to(&mut self, address: u16) {
-        self.program_counter = address;
+    // 1NNN - JP
+    // Jump to address NNN.
+    fn op_1NNN_jmp(&mut self, nnn: usize) {
+        self.program_counter = nnn;
     }
 
-    // 2NNN
-    fn call(&mut self, address: u16) {
-        self.push(self.program_counter);
-        self.program_counter = address;
+    // 2NNN - CALL
+    // Call subroutine at address NNN. Push current PC onto top of stack and set PC to NNN.
+    fn op_2NNN_call(&mut self, nnn: usize) {
+        self.push(self.program_counter as u16);
+        self.program_counter = nnn;
     }
 
-    // 3XNN
-    // If v register == NN value, skip the next opcode (ie increment pc by 2).
-    fn skip_if_same(&mut self, which_vreg: usize, value: u8) {
-        if self.vreg[which_vreg] == value {
+    fn skip_if(&mut self, condition: bool) {
+        if condition {
             self.program_counter += 2;
         }
     }
 
-    // 4XNN
-    // If v register != NN value, skip the next opcode (ie increment pc by 2).
-    fn skip_if_diff(&mut self, which_vreg: usize, value: u8) {
-        if self.vreg[which_vreg] != value {
-            self.program_counter += 2;
-        }
+    // 3XKK - SE Vx, KK
+    // Skip next instruction if Vx == KK.
+    fn op_3XKK_se_vx_kk(&mut self, vi: usize, kk: u8) {
+        self.skip_if(self.vreg[vi] == kk);
     }
 
-    // 5XY0
-    // If v register a == v register b, skip the next opcode (ie increment pc by 2).
-    fn skip_if_same_compare(&mut self, which_vreg_a: usize, which_vreg_b: usize) {
-        if self.vreg[which_vreg_a] == self.vreg[which_vreg_b] {
-            self.program_counter += 2;
-        }
+    // 4XKK - SNE Vx, KK
+    // Skip next instruction if Vx != KK.
+    fn op_4XKK_sne_vx_kk(&mut self, vi: usize, kk: u8) {
+        self.skip_if(self.vreg[vi] != kk);
     }
 
-    // 6XNN
-    fn set_vreg(&mut self, which_vreg: usize, value: u8) {
-        self.vreg[which_vreg] = value;
+    // 5XY0 - SE Vx, Vy
+    // Skip next instruction if Vx == Vy.
+    fn op_5XY0_se_vx_vy(&mut self, vi: usize, vj: usize) {
+        self.skip_if(self.vreg[vi] == self.vreg[vj]);
     }
 
-    // 7XNN
+    // 6XKK - LD Vx, KK
+    // Set Vx = KK.
+    fn op_6XKK_ld_vx_kk(&mut self, vi: usize, kk: u8) {
+        self.vreg[vi] = kk;
+    }
+
+    // 7XKK - ADD Vx, KK
     // Need to account for the case of overflow, so can't use addition operation.
     // Note that the Chip8 carry flag is not modified by this operation.
-    fn wrapping_add(&mut self, which_vreg: usize, value: u8) {
-        self.vreg[which_vreg] = self.vreg[which_vreg].wrapping_add(value);
+    fn op_7XKK_add_vx_kk(&mut self, vi: usize, kk: u8) {
+        let result = self.vreg[vi].wrapping_add(kk);
+        // or let result = self.vreg[vi] as u16 + kk as u16; // ?
+        self.vreg[vi] = result;
+
     }
 
-    // 8XY0
-    fn set_from_vreg(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
-        self.vreg[which_vreg_target] = self.vreg[which_vreg_source];
+    // 8XY0 - LD Vx, Vy
+    // Set Vx = Vy
+    fn op_8XY0_ld_vx_vy(&mut self, vi: usize, vj: usize) {
+        self.vreg[vi] = self.vreg[vj];
     }
 
-    // 8XY1
-    fn bitwise_or(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
-        self.vreg[which_vreg_target] |= self.vreg[which_vreg_source];
+    // 8XY1 - OR Vx, Vy
+    fn op_8XY1_or_vx_vy(&mut self, vi: usize, vj: usize) {
+        self.vreg[vi] |= self.vreg[vj];
     }
 
-    // 8XY2
-    fn bitwise_and(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
-        self.vreg[which_vreg_target] &= self.vreg[which_vreg_source];
+    // 8XY2 - AND Vx, Vy
+    fn op_8XY2_and_vx_vy(&mut self, vi: usize, vj: usize) {
+        self.vreg[vi] &= self.vreg[vj];
     }
 
-    // 8XY3
-    fn bitwise_xor(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
-        self.vreg[which_vreg_target] ^= self.vreg[which_vreg_source];
+    // 8XY3 - XOR Vx, Vy
+    fn op_8XY3_xor_vx_vy(&mut self, vi: usize, vj: usize) {
+        self.vreg[vi] ^= self.vreg[vj];
     }
 
-    // 8XY4
-    // Utilizes the VF flag register, which stores the carry flag.
-    // Must handle overflow case.
-    fn overflowing_add(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
-        let (value, carry) = self.vreg[which_vreg_target].overflowing_add(self.vreg[which_vreg_source]);
-        let flag = if carry { 1 } else { 0 };
+    // 8XY4 - ADD Vx, Vy
+    // Sets VF to 1 if the result is > 0b8 (255), else 0.
+    // The lowest 8 bits of the result are stored in Vx.
+    fn op_8XY4_add_vx_vy(&mut self, vi: usize, vj: usize) {
+        // or: let (result, carry) = self.vreg[vi].overflowing_add(self.vreg[vj]);
 
-        self.vreg[which_vreg_target] = value;
-        self.vreg[0xF] = flag; // same as vreg[16]?, the final 16th (0xf) register holds the flag register
+        let vx = self.vreg[vi] as u16;
+        let vy = self.vreg[vj] as u16;
+        let result = vx + vy;
+        let carry = result > 0xFF;
+
+        self.vreg[vi] = result as u8;
+        self.vreg[0x0F] = if carry { 1 } else { 0 };
     }
 
-    // 8XY5
-    // Also utilizes the VF flag register, which stores the carry flag.
-    // Must handle overflow case.
-    fn overflowing_subtract(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
-        let (value, borrow) = self.vreg[which_vreg_target].overflowing_sub(self.vreg[which_vreg_source]);
-        let flag = if borrow { 0 } else { 1 };
+    // 8XY5 - SUB Vx, Vy
+    // Sets Vx = Vx - Vy (lowest 8 bits of result).
+    // Sets VF = NOT borrow (ie if Vx > Vy).
+    fn op_8XY5_sub_vx_vy(&mut self, vi: usize, vj: usize) {
+        // or: let (result, borrow) = self.vreg[vi].overflowing_sub(self.vreg[vj]);
 
-        self.vreg[which_vreg_target] = value;
-        self.vreg[0xF] = flag; // vreg[16]?, the final 16th (0xf) register holds the flag register
+        let result = self.vreg[vi].wrapping_sub(self.vreg[vj]);
+        let borrow = self.vreg[vi] <= self.vreg[vj];
+
+        self.vreg[vi] = result;
+        self.vreg[0x0F] = if borrow { 0 } else { 1 };
     }
 
-    // 8XY6
-    // Rightshift the v register by 1, and store the dropped bit in the VF register.
-    fn rightshift(&mut self, which_vreg: usize) {
-        let least_signif_bit = self.vreg[which_vreg] & 1;
-        self.vreg[which_vreg] >>= 1;
-        self.vreg[0xF] = least_signif_bit;
+    // 8X06 - Shr Vx {, Vy}
+    // Sets Vx = Vx rightshift 1.
+    // Sets VF = the dropped bit, ie if the least-significant bit of Vx was 1.
+    fn op_8XY6_shr_vx(&mut self, vi: usize) {
+        self.vreg[0x0F] = self.vreg[vi] & 1;
+        self.vreg[vi] >>= 1;
     }
 
-    // 8XY7
-    // Overflowing subtract but flipped, Clear VF if borrow
-    fn overflowing_subtract_flipped(&mut self, which_vreg_target: usize, which_vreg_source: usize) {
-        let (value, borrow) = self.vreg[which_vreg_source].overflowing_sub(self.vreg[which_vreg_target]);
-        let flag = if borrow { 0 } else { 1 };
+    // 8XY7 - SUBN Vx, Vy
+    // Sets Vx = Vy - Vx (lowest 8 bits of result).
+    // Sets VF = NOT borrow (ie if Vy > Vx).
+    fn op_8XY7_subn_vx_vy(&mut self, vi: usize, vj: usize) {
+        // or: let (result, borrow) = self.vreg[vj].overflowing_sub(self.vreg[vi]);
 
-        self.vreg[which_vreg_target] = value;
-        self.vreg[0xF] = flag; // vreg[16]?, the final 16th (0xf) register holds the flag register
+        let result = self.vreg[vj].wrapping_sub((self.vreg[vi]));
+        let borrow = self.vreg[vj] <= self.vreg[vi];
+
+        self.vreg[vi] = result;
+        self.vreg[0x0F] = if borrow { 0 } else { 1 };
     }
 
-    // 8XYE
-    // Left shift and store dropped bit in VF
-    fn leftshift(&mut self, which_vreg: usize) {
-        let most_signif_bit = (self.vreg[which_vreg] >> 7) & 1;
-        self.vreg[which_vreg] <<= 1;
-        self.vreg[0xF] = most_signif_bit;
+    // 8X0E - SHL Vx {, Vy}
+    // Sets Vx = Vx leftshift 1.
+    // Sets VF = the dropped bit, ide if the most-significant bit of Vx was 1.
+    fn op_8XYE_shl_vx(&mut self, vi: usize) {
+        self.vreg[0x0F] = (self.vreg[vi] >> 7) & 1;
+        // or self.vreg[0x0F] = (self.vreg[vi] & 0b10000000) >> 7;
+        self.vreg[vi] <<= 1;
     }
 
-    // 9XY0
-    // Skip if VX != VY
-    // (Same as 5XY0 but with inequality.)
-    fn skip_if_diff_compare(&mut self, which_vreg_a: usize, which_vreg_b: usize) {
-        if self.vreg[which_vreg_a] != self.vreg[which_vreg_b] {
-            self.program_counter += 2;
-        }
+    // 9XY0 - SNE Vx, Vy
+    // Skip next instruction if Vx != Vy.
+    fn op_9XY0_sne_vx_vy(&mut self, vi: usize, vj: usize) {
+        self.skip_if(self.vreg[vi] != self.vreg[vj]);
     }
 
-    // ANNN
-    // I = 0xNNN
-    fn set_ireg(&mut self, value: u16) {
-        self.ireg = value;
+    // ANNN - LD I, NNN
+    // Set I = NNN (address)
+    fn op_ANNN_ld_i_nnn(&mut self, nnn: usize) {
+        self.ireg = nnn;
     }
 
-    // BNNN
-    // Jump to V0 + 0xNNN
-    fn jump_vreg0_to(&mut self, address: u16) {
-        self.program_counter = (self.vreg[0] as u16) + address;
+    // BNNN - JMP V0, NNN
+    // Set PC = V0 + NNN (address)
+    fn op_BNNN_jmp_v0_nnn(&mut self, nnn: usize) {
+        self.program_counter = (self.vreg[0] as usize) + nnn;
     }
 
-    // CXNN
-    // VX = rand() & 0xNN
-    fn set_to_rand(&mut self, which_vreg: usize, value: u8) {
-        let rng: u8 = rand::thread_rng().gen(); // random();
-        self.vreg[which_vreg] = rng & value;
+    // CXKK - RND Vx, KK
+    // Set Vx = rand() AND KK
+    fn op_CXKK_ld_vx_rand_and_kk(&mut self, vi: usize, kk: u8) {
+        let rng: u8 = rand::thread_rng().gen();
+        self.vreg[vi] = rng & kk;
     }
 
-    // DXYN
-    // Draw sprite at (VX, VY)
-    fn draw_sprite(&mut self, which_vreg_x: usize, which_vreg_y: usize, num_rows: u16) {
-        let x_coord = self.vreg[which_vreg_x] as u16;
-        let y_coord = self.vreg[which_vreg_y] as u16;
+    // DXYN - DRW Vx, Vy, N
+    // Starting at address stored in I, reads N bytes from memory,
+    // and draws them as sprites on screen at (Vx, Vy) (wrapping).
+    // Sets VF = if pixels are erased.
+    fn op_DXYN_drw(&mut self, vi: usize, vj: usize, n: usize) {
+        let x_coord = self.vreg[vi] as usize;
+        let y_coord = self.vreg[vj] as usize;
         let mut flipped = false;
 
-        for y_line in 0..num_rows {
-            let address = self.ireg + y_line as u16;
-            let pixels = self.ram[address as usize];
+        for byte in 0..n {
+            let y = (y_coord + byte) % SCREEN_HEIGHT;
+            let pixels = self.ram[self.ireg + byte];
 
-            for x_line in 0..8 {
-                if (pixels & (0b10000000 >> x_line)) != 0 {
-                    let x = (x_coord + x_line) as usize % SCREEN_WIDTH;
-                    let y = (y_coord + y_line) as usize % SCREEN_HEIGHT;
+            for bit in 0..8 {
+                let x = (x_coord + bit) % SCREEN_WIDTH;
+                let index = y * SCREEN_WIDTH + x;
 
-                    let index = x + SCREEN_WIDTH * y;
+                let color = pixels & (0b1000_0000 >> bit);
 
+                // v1
+                if color != 0 {
                     flipped |= self.screen[index];
-                    self.screen[index] ^= true;
+                    self.screen[index] ^= true; // (Set VF later at end)
                 }
+
+                // or v2...?
+                // self.vreg[0x0F] |= color * self.screen[index]; // Set VF by OR-ing with color * pixel?
+                // self.screen[index] ^= color; // Draw pixel
             }
         }
 
-        // Set VF register
-        if flipped {
-            self.vreg[0xF] = 1;
-        } else {
-            self.vreg[0xF] = 0;
-        }
+        // v1
+        self.vreg[0x0F] = if flipped { 1 } else { 0 };
+
+        self.screen_changed = true;
     }
 
-    // EX9E
-    // Skip if key index in VX is pressed
-    fn skip_if_key(&mut self, which_vreg: usize) {
-        let vx = self.vreg[which_vreg];
-        let key = self.keys[vx as usize];
-        if key {
-            self.program_counter += 2;
-        }
+    // EX9E - SKP Vx
+    // Skip next instruction if key with value stored in Vx is pressed.
+    fn op_EX9E_skp_vx(&mut self, vi: usize) {
+        self.skip_if(self.keys[self.vreg[vi] as usize]);
     }
 
-    // EXA1
-    // Skip if not key
-    fn skip_if_not_key(&mut self, which_vreg: usize) {
-        let vx = self.vreg[which_vreg];
-        let key = self.keys[vx as usize];
-        if !key {
-            self.program_counter += 2;
-        }
+    // EXA1 - SKNP
+    // Skip next instruction if key with the value stored in Vx is not pressed.
+    fn op_EXA1_sknp_vx(&mut self, vi: usize) {
+        self.skip_if(!self.keys[self.vreg[vi] as usize]);
     }
 
-    // FX07
-    // Set VX = Delay Timer
-    fn set_vreg_to_delay_timer(&mut self, which_vreg: usize) {
-        self.vreg[which_vreg] = self.delay_timer;
+    // FX07 - LD Vx, DT
+    // Set Vx = delay timer.
+    fn op_FX07_ld_vx_dt(&mut self, vi: usize) {
+        self.vreg[vi] = self.delay_timer;
     }
 
-    // FX0A
-    // Wait for key, store index in VX
-    fn wait_for_key(&mut self, which_vreg: usize) {
+    // FX0A - LD Vx, Key
+    // Wait for a key press, and then store the pressed key value in Vx.
+    fn op_FX0A_ld_vx_key(&mut self, vi: usize) {
         let mut pressed = false;
 
-        for i in 0..self.keys.len() {
-            if self.keys[i] {
-                self.vreg[which_vreg] = i as u8;
+        for key in 0..self.keys.len() {
+            if self.keys[key] {
+                self.vreg[vi] = key as u8;
                 pressed = true;
                 break;
             }
         }
 
-        // Block/wait if key not pressed, by repeating the opcode
-        // (Not in an infinite loop because we must not block input.)
+        // Block/wait if no key pressed by repeating the previous opcode.
+        // (Don't infinite while loop because we must not block new input.)
         if !pressed {
             self.program_counter -= 2;
         }
     }
 
-    // FX15
-    // Delay Timer = VX
-    fn set_delay_timer(&mut self, which_vreg: usize) {
-        self.delay_timer = self.vreg[which_vreg];
+    // FX15 - LD DT, Vx
+    // Set delay timer = VX.
+    fn op_FX15_ld_dt_vx(&mut self, vi: usize) {
+        self.delay_timer = self.vreg[vi];
     }
 
-    // FX18
-    // Sound Timer = VX
-    fn set_sound_timer(&mut self, which_vreg: usize) {
-        self.sound_timer = self.vreg[which_vreg];
+    // FX18 - LD ST, Vx
+    // Set sound timer = Vx.
+    fn op_FX18_ld_st_vx(&mut self, vi: usize) {
+        self.sound_timer = self.vreg[vi];
     }
 
-    // FX1E
-    // I += VX
-    fn add_to_ireg(&mut self, which_vreg: usize) {
-        let vx = self.vreg[which_vreg] as u16;
-        self.ireg = self.ireg.wrapping_add(vx);
+    // FX1E - ADD I, Vx
+    // Set I = I + VX. Does NOT set VF.
+    fn op_FX1E_add_i_vx(&mut self, vi: usize) {
+        self.ireg += self.vreg[vi] as usize;
     }
 
-    // FX29
-    // Set i to address of font character in VX
-    fn set_ireg_to_font_address(&mut self, which_vreg: usize) {
-        let c = self.vreg[which_vreg] as u16;
-        self.ireg = c * 5; // multiplied by 5 because each font occupies 5 bytes
+    // FX29 - LD F, Vx
+    // Set I = address of sprite for digit Vx (font).
+    fn op_FX29_ld_d_vx(&mut self, vi: usize) {
+        self.ireg = (self.vreg[vi] as usize) * 5; // each font occupies 5 bytes
     }
 
+    // BCD = Binary-Coded Decimal
     fn easy_to_read_bcd(x: f32) -> [u8; 3] {
-        let hundreds = (x / 100.0).floor() as u8;
-        let tens = ((x / 10.0) % 10.0).floor() as u8;
+        let hundreds = (x / 100.0) as u8;
+        let tens = ((x / 10.0) % 10.0) as u8;
         let ones = (x % 10.0) as u8;
         [hundreds, tens, ones]
     }
 
-    // FX33
-    // Store BCD encoding of VX into I, inclusive.
-    /// BCD = Binary-Coded Decimal, to convert hex back into decimal.
-    fn load_bcd_vreg_into_ireg(&mut self, which_vreg: usize) {
-        let vx = self.vreg[which_vreg] as f32;
+    // FX33 - LD B, Vx
+    // The interpreter takes the decimal value of Vx, and stores each digit in I.
+    fn op_FX33_ld_b_vx(&mut self, vi: usize) {
+        let vx = self.vreg[vi] as f32;
 
         let [hundreds, tens, ones] = Emulator::easy_to_read_bcd(vx);
 
@@ -409,78 +493,21 @@ impl Emulator {
         self.ram[(self.ireg + 2) as usize] = ones;
     }
 
-    // FX55
-    // Load V0 through VX into I
-    fn load_vreg_into_ireg(&mut self, n: usize) {
-        let start_address = self.ireg as usize;
+    // FX55 - LD [I], Vx
+    // Load V0 through VX into memory at address stored in I register.
+    fn op_FX55_ld_i_vx(&mut self, n: usize) {
+        let start_address = self.ireg;
         for i in 0..=n {
             self.ram[start_address + i] = self.vreg[i];
         }
     }
 
-    // FX65
-    // Load I into V0 thru VX with RAM values starting at address 1, inclusive.
-    fn load_ireg_into_vreg(&mut self, n: usize) {
-        let start_address = self.ireg as usize;
+    // FX65 - LD Vx, [I]
+    // Load values from memory starting at address I into registers V0 thru Vx
+    fn op_FX65_ld_vx_i(&mut self, n: usize) {
+        let start_address = self.ireg;
         for i in 0..=n {
             self.vreg[i] = self.ram[start_address + i]
-        }
-    }
-
-    // Execute the opcode.
-    fn execute(&mut self, opcode: u16) {
-        let digit1 = (opcode & 0xF000) >> 12;
-        let digit2 = (opcode & 0x0F00) >> 8;
-        let digit3 = (opcode & 0x00F0) >> 4;
-        let digit4 = opcode & 0x000F;
-
-        match (digit1, digit2, digit3, digit4) {
-            (0, 0, 0, 0) => return,
-            (0, 0, 0xE, 0) => Emulator::clear_screen(self),
-            (0, 0, 0xE, 0xE) => Emulator::return_from_subroutine(self),
-
-            (1, _, _, _) => Emulator::jump_to(self, opcode & 0xFFF),
-            (2, _, _, _) => Emulator::call(self, opcode & 0xFFF),
-            (3, _, _, _) => Emulator::skip_if_same(self, digit2 as usize, (opcode & 0xFF) as u8),
-            (4, _, _, _) => Emulator::skip_if_diff(self, digit2 as usize, (opcode & 0xFF) as u8),
-            (5, _, _, _) => Emulator::skip_if_same_compare(self, digit2 as usize, digit3 as usize),
-            (6, _, _, _) => Emulator::set_vreg(self, digit2 as usize, (opcode & 0xFF) as u8),
-            (7, _, _, _) => Emulator::wrapping_add(self, digit2 as usize, (opcode & 0xFF) as u8),
-
-            (8, _, _, 0) => Emulator::set_from_vreg(self, digit2 as usize, digit3 as usize),
-            (8, _, _, 1) => Emulator::bitwise_or(self, digit2 as usize, digit3 as usize),
-            (8, _, _, 2) => Emulator::bitwise_and(self, digit2 as usize, digit3 as usize),
-            (8, _, _, 3) => Emulator::bitwise_xor(self, digit2 as usize, digit3 as usize),
-            (8, _, _, 4) => Emulator::overflowing_add(self, digit2 as usize, digit3 as usize),
-            (8, _, _, 5) => Emulator::overflowing_subtract(self, digit2 as usize, digit3 as usize),
-            (8, _, _, 6) => Emulator::rightshift(self, digit2 as usize),
-            (8, _, _, 7) => Emulator::overflowing_subtract_flipped(self, digit3 as usize, digit2 as usize),
-            (8, _, _, 0xE) => Emulator::leftshift(self, digit3 as usize),
-
-            (9, _, _, 0) => Emulator::skip_if_diff_compare(self, digit2 as usize, digit3 as usize),
-
-            (0xA, _, _, _) => Emulator::set_ireg(self, opcode & 0xFFF),
-
-            (0xB, _, _, _) => Emulator::jump_vreg0_to(self, opcode & 0xFFF),
-
-            (0xC, _, _, _) => Emulator::set_to_rand(self, digit2 as usize, (opcode & 0xFF) as u8),
-
-            (0xD, _, _, _) => Emulator::draw_sprite(self, digit2 as usize, digit3 as usize, digit4 as u16),
-
-            (0xE, _, 9, 0xE) => Emulator::skip_if_key(self, digit2 as usize),
-            (0xE, _, 0xA, 1) => Emulator::skip_if_not_key(self, digit2 as usize),
-
-            (0xF, _, 0, 7) => Emulator::set_vreg_to_delay_timer(self, digit2 as usize),
-            (0xF, _, 0, 0xA) => Emulator::wait_for_key(self, digit2 as usize),
-            (0xF, _, 1, 5) => Emulator::set_delay_timer(self, digit2 as usize),
-            (0xF, _, 1, 8) => Emulator::set_sound_timer(self, digit2 as usize),
-            (0xF, _, 1, 0xE) => Emulator::add_to_ireg(self, digit2 as usize),
-            (0xF, _, 2, 9) => Emulator::set_ireg_to_font_address(self, digit2 as usize),
-            (0xF, _, 3, 3) => Emulator::load_bcd_vreg_into_ireg(self, digit2 as usize),
-            (0xF, _, 5, 5) => Emulator::load_vreg_into_ireg(self, digit2 as usize),
-            (0xF, _, 6, 5) => Emulator::load_ireg_into_vreg(self, digit2 as usize),
-
-            (_, _, _, _) => unimplemented!("Unimplemented opcode: {:x} ({:x} {:x} {:x} {:x})", opcode, digit1, digit2, digit3, digit4)
         }
     }
 }
