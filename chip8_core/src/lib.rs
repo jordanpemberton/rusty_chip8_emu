@@ -333,7 +333,7 @@ impl Emulator {
     fn op_8XY7_subn_vx_vy(&mut self, vi: usize, vj: usize) {
         // or: let (result, borrow) = self.vreg[vj].overflowing_sub(self.vreg[vi]);
 
-        let result = self.vreg[vj].wrapping_sub((self.vreg[vi]));
+        let result = self.vreg[vj].wrapping_sub(self.vreg[vi]);
         let borrow = self.vreg[vj] <= self.vreg[vi];
 
         self.vreg[vi] = result;

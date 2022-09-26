@@ -16,6 +16,7 @@ const SCALE: u32 = 15;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const TICKS_PER_FRAME: usize = 10;
+const DEFAULT_GAMES_FOLDER_PATH: &str = "/home/jordan/Games/Chip8/c8games/";
 
 fn draw_screen(emulator: &mut Emulator, canvas: &mut Canvas<Window>) {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
@@ -82,10 +83,22 @@ fn setup_canvas(sdl_context: &Sdl) -> WindowCanvas {
     canvas
 }
 
+fn select_game(games_folder_path: &str) -> &str {
+    // TODO: Display numbered folder contents
+
+    // TODO: Accept input to select a game
+
+    // TEMP
+    "15PUZZLE"
+}
+
 fn load_game(game_path: &str) -> Emulator {
     let mut chip8 = Emulator::new();
 
-    let mut rom = File::open(game_path).expect("Unable to open file :(");
+    let mut msg = String::from("Unable to open file. Provided path was ");
+    msg.push_str(game_path);
+
+    let mut rom = File::open(game_path).expect(&*msg);
     let mut buffer = Vec::new();
 
     rom.read_to_end(&mut buffer).unwrap();
@@ -126,16 +139,27 @@ fn main_loop(chip8: &mut Emulator, event_pump: &mut EventPump, canvas: &mut Wind
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        println!("Usage: cargo run path/to/game");
-        return;
+
+    let mut games_folder_path = if args.len() > 1 { args[1].clone() }
+        else { DEFAULT_GAMES_FOLDER_PATH.to_string() };
+    if !games_folder_path.ends_with('/') {
+        games_folder_path.push('/');
     }
 
-    let sdl_context = sdl2::init().unwrap();
+    let mut game_full_path = games_folder_path.clone();
 
-    let mut canvas = setup_canvas(&sdl_context);
-    let mut event_pump = sdl_context.event_pump().unwrap();
-    let mut game = load_game(&args[1]);
+    let game_relative_path = select_game(games_folder_path.as_str());
 
-    main_loop(&mut game, &mut event_pump, &mut canvas);
+    game_full_path.push_str(game_relative_path);
+
+    if !game_full_path.is_empty() {
+        let sdl_context = sdl2::init().unwrap();
+
+        let mut canvas = setup_canvas(&sdl_context);
+        let mut event_pump = sdl_context.event_pump().unwrap();
+
+        let mut game = load_game(game_full_path.as_str());
+
+        main_loop(&mut game, &mut event_pump, &mut canvas);
+    }
 }
