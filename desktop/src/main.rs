@@ -1,16 +1,7 @@
 use chip8_core::*;
 
-use std::env;
-use std::fs;
-use std::io::Read;
-
-use sdl2::event::Event;
-use sdl2::{EventPump, Sdl};
-use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::{Canvas, WindowCanvas};
-use sdl2::video::Window;
+use std::{env, fs, io, io::Read, path};
+use sdl2::{event::Event, EventPump, keyboard::Keycode, pixels::Color, rect::Rect, render::Canvas, render::WindowCanvas, Sdl, video::Window};
 
 const SCALE: u32 = 15;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
@@ -83,18 +74,57 @@ fn setup_canvas(sdl_context: &Sdl) -> WindowCanvas {
     canvas
 }
 
-fn select_game(games_folder_path: &str) -> String {
-    // TODO: Display numbered folder contents
-    let games = fs::read_dir(games_folder_path).unwrap();
-    for game in games {
-        println!("{}", game.unwrap().path().display());
+fn get_folder_contents(folder_path: &str) -> Vec<fs::DirEntry> {
+    let mut contents: Vec<fs::DirEntry> = fs::read_dir(folder_path).unwrap()
+        .map(|entry| entry.unwrap())
+        .collect();
+    contents.sort_by_key(|entry| entry.file_name());
+
+    for (i, entry) in contents.iter().enumerate() {
+        let filename = entry.file_name();
+        let path = entry.path();
+
+        if path.is_dir() {
+            println!("{}: {}/", i, filename.to_str().unwrap());
+        }
+        else {
+            println!("{}: {}", i, filename.to_str().unwrap());
+        }
     }
 
-    // TODO: Accept input to select a game
+    contents
+}
 
-    // TEMP dummy code
-    let mut game_full_path = String::from(games_folder_path);
-    game_full_path.push_str("15PUZZLE");
+fn get_user_input(max_allowed_number: usize) -> usize {
+    let mut buffer = String::new();
+    let mut x: i32 = -1;
+
+    while x < 0 || x > max_allowed_number as i32 {
+        buffer.clear();
+        io::stdin().read_line(&mut buffer).unwrap();
+        x = buffer.trim().parse::<i32>().expect("Parsed input was not an integer.");
+    }
+
+    x as usize
+}
+
+fn select_game(games_folder_path: &str) -> String {
+    let mut game_full_path: String = String::new();
+
+    let mut files: Vec<fs::DirEntry>;
+    let mut selection_number: usize;
+    let mut curr_path: &str = games_folder_path;
+    let mut sub_path: path::PathBuf;
+
+    while game_full_path.is_empty() {
+        files = get_folder_contents(curr_path);
+        selection_number = get_user_input(files.len() - 1);
+        sub_path = files[selection_number].path();
+        curr_path = sub_path.to_str().unwrap();
+        if !sub_path.is_dir() {
+            game_full_path.push_str(curr_path);
+        }
+    }
 
     game_full_path
 }
