@@ -1,6 +1,6 @@
 use chip8_core::*;
 
-use std::{env, fs, io, io::Read, path};
+use std::{env, fs, io, io::Read, path::PathBuf};
 use sdl2::{event::Event, EventPump, keyboard::Keycode, pixels::Color, rect::Rect, render::Canvas, render::WindowCanvas, Sdl, video::Window};
 
 const SCALE: u32 = 15;
@@ -74,25 +74,36 @@ fn setup_canvas(sdl_context: &Sdl) -> WindowCanvas {
     canvas
 }
 
-fn get_folder_contents(folder_path: &str) -> Vec<fs::DirEntry> {
-    let mut contents: Vec<fs::DirEntry> = fs::read_dir(folder_path).unwrap()
-        .map(|entry| entry.unwrap())
+// Uses index 0 to hold parent dir.
+fn get_folder_contents(folder_path: &str) -> Vec<PathBuf> {
+    let read_contents = fs::read_dir(folder_path).unwrap();
+    let dir_entries: Vec<fs::DirEntry> = read_contents
+        .map(|result| result.unwrap())
         .collect();
-    contents.sort_by_key(|entry| entry.file_name());
+    let mut path_bufs: Vec<PathBuf> = dir_entries.iter()
+        .map(|entry| entry.path())
+        .collect();
 
-    for (i, entry) in contents.iter().enumerate() {
-        let filename = entry.file_name();
-        let path = entry.path();
+    path_bufs.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
 
-        if path.is_dir() {
-            println!("{}: {}/", i, filename.to_str().unwrap());
-        }
-        else {
-            println!("{}: {}", i, filename.to_str().unwrap());
-        }
+    let curr_path_buf = path_bufs[0].parent().unwrap().to_path_buf();
+    let parent_path_buf = curr_path_buf.parent().unwrap().to_path_buf();
+    path_bufs.insert(0, parent_path_buf);
+
+    path_bufs
+}
+
+fn display_folder_contents(contents: &[PathBuf]) {
+    println!();
+
+    for (i, path) in contents.iter().enumerate() {
+        let filename = path.file_name().unwrap();
+        println!("{}: {}{}{}",
+            i,
+            if i == 0 { "↑ " } else { "" },
+            filename.to_str().unwrap(),
+            if path.is_dir() { "/" } else { "" });
     }
-
-    contents
 }
 
 fn get_user_input(max_allowed_number: usize) -> usize {
@@ -111,15 +122,16 @@ fn get_user_input(max_allowed_number: usize) -> usize {
 fn select_game(games_folder_path: &str) -> String {
     let mut game_full_path: String = String::new();
 
-    let mut files: Vec<fs::DirEntry>;
+    let mut files: Vec<PathBuf>;
     let mut selection_number: usize;
     let mut curr_path: &str = games_folder_path;
-    let mut sub_path: path::PathBuf;
+    let mut sub_path: PathBuf;
 
     while game_full_path.is_empty() {
         files = get_folder_contents(curr_path);
-        selection_number = get_user_input(files.len() - 1);
-        sub_path = files[selection_number].path();
+        display_folder_contents(&files);
+        selection_number = get_user_input(files.len());
+        sub_path = files[selection_number].clone();
         curr_path = sub_path.to_str().unwrap();
         if !sub_path.is_dir() {
             game_full_path.push_str(curr_path);
