@@ -45,6 +45,12 @@ pub struct Emulator {
     screen: [bool; SCREEN_WIDTH * SCREEN_HEIGHT]
 }
 
+impl Default for Emulator {
+    fn default() -> Self {
+        Emulator::new()
+    }
+}
+
 impl Emulator {
     pub fn new() -> Self {
         let mut emulator = Self {
@@ -138,11 +144,11 @@ impl Emulator {
 
     // EXECUTE the opcode.
     fn execute(&mut self, opcode: u16) {
-        let nibbles = (
-            (opcode & 0xF000) >> 12 as u8,
-            (opcode & 0x0F00) >> 8 as u8,
-            (opcode & 0x00F0) >> 4 as u8,
-            (opcode & 0x000F) as u8
+        let nibbles: (u16, u16, u16, u16) = (
+            (opcode & 0xF000) >> 12,
+            (opcode & 0x0F00) >> 8,
+            (opcode & 0x00F0) >> 4,
+            (opcode & 0x000F)
         );
 
         let nnn = (opcode & 0x0FFF) as usize;
@@ -152,7 +158,7 @@ impl Emulator {
         let n = nibbles.3 as usize;
 
         match nibbles {
-            (0, 0, 0, 0) => return,
+            (0, 0, 0, 0) => (),
             (0, 0, 0xE, 0) => self.op_00E0_cls(),
             (0, 0, 0xE, 0xE) => self.op_00EE_ret(),
             (1, _, _, _) => self.op_1NNN_jmp(nnn),
