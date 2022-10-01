@@ -32,7 +32,6 @@ const FONTSET: [u8; FONTSET_SIZE] = [
 ];
 
 pub struct Emulator {
-    screen_changed: bool,
     delay_timer: u8,
     sound_timer: u8,
     program_counter: usize,
@@ -54,7 +53,6 @@ impl Default for Emulator {
 impl Emulator {
     pub fn new() -> Self {
         let mut emulator = Self {
-            screen_changed: false,
             delay_timer: 0,
             sound_timer: 0,
             program_counter: START_ADDR,
@@ -71,7 +69,6 @@ impl Emulator {
     }
 
     pub fn reset(&mut self) {
-        self.screen_changed = false;
         self.delay_timer = 0;
         self.sound_timer = 0;
         self.program_counter = START_ADDR;
@@ -137,7 +134,6 @@ impl Emulator {
     }
 
     pub fn tick(&mut self) {
-        self.screen_changed = false;
         let opcode = self.fetch_opcode();
         self.execute(opcode);
     }
@@ -180,7 +176,7 @@ impl Emulator {
             (9, _, _, 0) => self.op_9XY0_sne_vx_vy(x, y),
             (0xA, _, _, _) => self.op_ANNN_ld_i_nnn(nnn),
             (0xB, _, _, _) => self.op_BNNN_jmp_v0_nnn(nnn),
-            (0xC, _, _, _) => self.op_CXKK_ld_vx_rand_and_kk(y, kk),
+            (0xC, _, _, _) => self.op_CXKK_ld_vx_rand_and_kk(x, kk),
             (0xD, _, _, _) => self.op_DXYN_drw(x, y, n),
             (0xE, _, 9, 0xE) => self.op_EX9E_skp_vx(x),
             (0xE, _, 0xA, 1) => self.op_EXA1_sknp_vx(x),
@@ -214,7 +210,6 @@ impl Emulator {
     // Clear screen
     fn op_00E0_cls(&mut self) {
         self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
-        self.screen_changed = true;
     }
 
     // 00EE - RET
@@ -413,8 +408,6 @@ impl Emulator {
 
         // v1
         self.vreg[0x0F] = if flipped { 1 } else { 0 };
-
-        self.screen_changed = true;
     }
 
     // EX9E - SKP Vx

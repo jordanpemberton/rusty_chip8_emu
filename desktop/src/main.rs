@@ -6,7 +6,7 @@ use sdl2::{event::Event, EventPump, keyboard::Keycode, pixels::Color, rect::Rect
 const SCALE: u32 = 15;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
-const TICKS_PER_FRAME: usize = 10;
+const TICKS_PER_FRAME: usize = 8;
 const DEFAULT_GAMES_FOLDER_PATH: &str = "/home/jordan/Games/Chip8/c8games/";
 
 fn draw_screen(emulator: &mut Emulator, canvas: &mut Canvas<Window>) {
