@@ -1,0 +1,55 @@
+: lt
+	# octo8 pseudo op "<"
+	if v0 < v1 then
+	
+	# compiled: 
+	# 0x8F 0x10 0x8F 0x07 0x4F 0x00
+	
+	# equivalent to:
+	vf := v1
+	vf =- v0	# vf = (v0 - v1) < 0
+	if vf == 0 then
+return
+
+: lte
+	# octo8 pseudo op "<="
+	if v0 <= v1 then
+	
+	# compiled: 
+	# 0x8F 0x10 0x8F 0x05 0x3F 0x00
+	
+	# equivalent to:
+	vf := v1
+	vf -= v0  # vf = (v1 - v0) < 0
+	if vf != 0 then
+return
+
+: gt
+	# octo8 pseudo op ">"
+	if v0 > v1 then
+	
+	# compiled:
+	# 0x8F 0x10 0x8F 0x05 0x4F 0x00 
+	
+	# equivalent to:
+	vf := v1
+	vf -= v0
+	if vf == 0 then
+return
+
+: gte
+	# octo8 pseudo op ">="
+	if v0 >= v1 then
+	
+	# compiled:
+	# 0x8F 0x10 0x8F 0x07 0x3F 0x00
+	
+	# equivalent to:
+	vf := v1
+	vf =- v0
+	if vf != 0 then
+return
+
+: main
+	
+	
