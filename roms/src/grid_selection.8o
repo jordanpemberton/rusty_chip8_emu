@@ -1,0 +1,90 @@
+: full_fill
+	0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
+
+: lil_square
+  0x00 0x00 0x3C 0x24 0x24 0x3C 0x00 0x00
+
+: med_square
+  0x00 0x7E 0x42 0x42 0x42 0x42 0x7E 0x00
+
+: big_square
+  0xFF 0x81 0x81 0x81 0x81 0x81 0x81 0xFF
+
+:alias k 		v0
+:alias px 	v1
+:alias py 	v2
+:alias z 		v3
+
+
+: draw_grid
+	i := med_square
+
+	# for px = 0..56
+	px := 0
+	loop
+		# for py = 0..24
+		py := 0
+		loop
+			sprite px py 8
+			py += 8
+			while py != 32
+		again			
+		px += 8
+		while px != 64
+	again
+return
+
+: move_selection
+	k := key
+
+	# erase highlight current cell
+	sprite px py 8
+
+	if k == 7 begin
+		if px != 0 then px -= 8
+	end
+	
+	if k == 9 begin
+		if px != 56 then px += 8
+	end
+	
+	if k == 5 begin 
+		if py != 0 then py -= 8
+	end	
+
+	if k == 8 begin 
+		if py != 24 then py += 8
+	end
+
+	# highlight new cell
+	sprite px py 8
+return
+
+: main_loop	
+	# highlight starting cell
+	i := full_fill
+	sprite px py 8
+		
+	loop
+		vf := 24
+		delay := vf
+		
+		move_selection
+	
+		loop
+			vf := delay
+			if vf != 0 then
+		again
+	again
+return 
+
+: main
+	clear
+	
+	draw_grid
+	
+	# starting cell
+	px := 0
+	py := 0
+	
+	main_loop

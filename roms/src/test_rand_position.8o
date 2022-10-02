@@ -1,0 +1,35 @@
+: square
+  0xFF 0x81 0x81 0x81 0x81 0x81 0x81 0xFF
+
+:alias key_ v0
+:alias px v1
+:alias py v2
+:alias rnd v3
+
+: main
+	i := square
+	px := 0
+	py := 0
+
+loop
+	clear
+	
+	# count down 1/60th of a second:
+	vf := 24
+	delay := vf
+
+	# ===== main loop =====
+	sprite px py 8
+
+rnd := random 0xFF
+px += rnd
+rnd := random 0xFF
+py += rnd
+
+	# if we've spent less than 1/60th of a second,
+	# loop until the timer decrements:
+	loop
+		vf := delay
+		if vf != 0 then
+	again
+again
