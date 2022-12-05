@@ -1,0 +1,75 @@
+: player
+	0x00 0x00 0x18 0x28 0x1C 0x14 0x00 0x00
+
+:alias k 		v0
+:alias px 	v1
+:alias py 	v2
+
+: draw_player
+	i := player
+	sprite px py 8
+return 
+
+: move_left
+	if px != 0 begin
+		draw_player
+		px -= 8
+		draw_player
+	end
+return 
+
+: move_right
+	if px != 56 begin
+		draw_player
+		px += 8
+		draw_player
+	end
+return 
+
+: move_up
+	if py != 0 begin
+		draw_player
+		py -= 8
+		draw_player
+	end
+return 
+
+: move_down
+	if py != 24 begin
+		draw_player
+		py += 8
+		draw_player
+	end
+return 
+
+: wait_for_input_update_player
+	k := key
+	if k == 7 then move_left
+	if k == 9 then move_right
+	if k == 5 then move_up
+	if k == 8 then move_down
+return
+
+: main_loop	
+	loop
+		vf := 8
+		delay := vf
+		
+		wait_for_input_update_player
+
+		loop
+			vf := delay
+			if vf != 0 then
+		again
+	again
+return 
+
+: main
+	clear
+	
+	px := 0
+	py := 0
+	draw_player
+	
+	main_loop
+return
