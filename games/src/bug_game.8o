@@ -1,0 +1,422 @@
+: map_a
+	0xFF 0x80 0x80 0x80 0x80 0x80 0x80 0x80
+	0xFF 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	0xFF 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	0xFF 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	0xFF 0x01 0x01 0x01 0x01 0x01 0x01 0x01
+	0x81 0x81 0x81 0x81 0x81 0x81 0x81 0x81
+	0xFF 0x80 0x80 0x80 0x80 0x80 0x80 0x80
+	0xFF 0x01 0x01 0x01 0x01 0x01 0x01 0x01
+	
+	0x80 0x80 0x80 0x80 0x80 0x80 0x80 0x80
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x01
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	0x01 0x01 0x01 0x01 0x01 0x01 0x01 0x01	
+	0x81 0x81 0x81 0x81 0x81 0x81 0x81 0x81
+	0x80 0x80 0x80 0x80 0x80 0x80 0x80 0xFF
+	0x01 0x01 0x01 0x01 0x01 0x01 0x01 0x01	
+
+	0x80 0x80 0x80 0x80 0x80 0x80 0x80 0x80
+	0x01 0x01 0x01 0x01 0x01 0x01 0x01 0x01	
+	0xFF 0x80 0x80 0x80 0x80 0x80 0x80 0x80
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	0xFF 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	0x01 0x01 0x01 0x01 0x01 0x01 0x01 0x01
+	
+	0x80 0x80 0x80 0x80 0x80 0x80 0x80 0xFF
+	0x01 0x01 0x01 0x01 0x01 0x01 0x01 0xFF
+	0x80 0x80 0x80 0x80 0x80 0x80 0x80 0x80
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF
+	0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF
+	0x01 0x01 0x01 0x01 0x01 0x01 0x01 0xFF
+
+: reward
+	0x00 0x00 0x18 0x2C 0x3C 0x18 0x00 0x00
+	
+: enemy_states
+	# left_atrest # 0
+	0x00 0x00 0x3C 0x28 0x3C 0x38 0x00 0x00
+	# left_active # 1
+	0x00 0x00 0x3C 0x28 0x38 0x3C 0x00 0x00
+	# right_atrest # 2
+	0x00 0x00 0x3C 0x14 0x3C 0x1C 0x00 0x00
+ 	# right_active # 3
+	0x00 0x00 0x3C 0x14 0x1C 0x3C 0x00 0x00
+
+: player_states
+	# left_atrest # 0
+	0x00 0x00 0x00 0x38 0x28 0x3C 0x00 0x00
+	# left_active # 1
+	0x00 0x00 0x38 0x28 0x38 0x1C 0x00 0x00
+	# right_atrest # 2
+	0x00 0x00 0x00 0x1C 0x14 0x3C 0x00 0x00
+ 	# right_active # 3
+	0x00 0x00 0x1C 0x14 0x1C 0x38 0x00 0x00
+
+:alias temp v2
+:alias px v3
+:alias py v4
+# positions as tile index 0..31
+:alias player_position v5
+:alias enemy_position v6
+:alias player_state v7
+:alias enemy_state v8
+:alias speed v9
+:alias delta va
+
+# in:  temp
+# out: px, 		reward_idle
+: index_to_pxpy
+	# y = floor(index / width) = index / 8
+	py := temp
+	py >>= py
+	py >>= py
+	py >>= py
+
+	# py = y * scale = y * 8
+	py <<= py
+	py <<= py
+	py <<= py
+	
+	# x = index - (y * width) = index - y * 8 = index - py
+	px := temp
+	px -= py
+	
+	# px = x * scale = x * 8
+	px <<= px
+	px <<= px
+	px <<= px
+return
+
+# in:  px, py
+# out: temp
+: pxpy_to_index
+	# index = y * width + x 
+	#       = (py / scale) * width + (px / scale) 
+	#       = py + px / 8
+	temp := px
+	temp >>= temp
+	temp >>= temp
+	temp >>= temp
+	
+	temp += py
+return
+
+# in: 
+# out:
+: draw_map
+	i := map_a
+	py := 0
+	loop
+		px := 0
+		loop
+			sprite px py 8
+			px += 8
+			temp := 8
+			i += temp
+			if px != 64 then
+		again
+		py += 8
+		if py != 32 then
+	again
+return
+
+# in:  enemy_state
+# out: i
+: get_enemy_sprite
+	i := enemy_states
+	temp := enemy_state
+	temp <<= temp
+	temp <<= temp
+	temp <<= temp
+	i += temp
+return
+
+# in:  player_state
+# out: i
+: get_player_sprite
+	i := player_states
+	temp := player_state
+	temp <<= temp
+	temp <<= temp
+	temp <<= temp
+	i += temp
+return
+
+# in:  v1 (player direction, TopRightBottomLeft)
+# out: vf (is obstacle)
+: check_for_obstacle
+	i := map_a
+
+	# get current map tile for (px,py), tile offset = py * 8 + px
+	temp := py
+	temp <<= temp
+	temp <<= temp
+	temp <<= temp
+	temp += px
+	i += temp
+	
+	# row offset to check a particular row in the map tile sprite
+	if v1 == 0 then temp := 0
+	if v1 == 1 then temp := 1
+	if v1 == 2 then temp := 7
+	if v1 == 3 then temp := 1
+	i += temp
+	
+	load v0
+
+	get_player_sprite
+	
+	# mask the corresponding wall on the map sprite row
+	if v1 == 0 then temp := 0xFF
+	if v1 == 1 then temp := 0x01
+	if v1 == 2 then temp := 0xFF
+	if v1 == 3 then temp := 0x80
+
+	v0 &= temp
+	
+	vf := 0
+	if v0 == temp then vf := 1
+return
+
+# in:  
+# out: 
+: move_player_up
+	temp := player_position
+	index_to_pxpy
+	
+	get_player_sprite
+	sprite px py 8
+		
+	if py != 0 begin
+		v1 := 0
+		check_for_obstacle
+		if vf == 0 begin	
+			py -= 8
+			player_position -= 8
+		end
+	end
+	
+	temp := player_state
+	if temp == 0 then player_state := 1
+	if temp == 1 then player_state := 0
+	if temp == 2 then player_state := 3
+	if temp == 3 then player_state := 2
+
+	get_player_sprite
+	sprite px py 8
+return
+
+# in:  
+# out: 
+: move_player_right
+	temp := player_position
+	index_to_pxpy
+	
+	get_player_sprite
+	sprite px py 8
+
+	if px != 56 begin
+		v1 := 1	
+		check_for_obstacle
+		if vf == 0 begin
+			px += 8
+			player_position += 1
+		end
+	end
+	
+	temp := player_state
+	if temp == 0 then player_state := 3
+	if temp == 1 then player_state := 2
+	if temp == 2 then player_state := 3
+	if temp == 3 then player_state := 2
+
+	get_player_sprite
+	sprite px py 8
+return
+
+# in:  
+# out: 
+: move_player_down
+	temp := player_position
+	index_to_pxpy
+	
+	get_player_sprite
+	sprite px py 8
+
+	if py != 24 begin
+		v1 := 2
+		check_for_obstacle
+		if vf == 0 begin
+			py += 8
+			player_position += 8
+		end
+	end
+	
+	temp := player_state
+	if temp == 0 then player_state := 1
+	if temp == 1 then player_state := 0
+	if temp == 2 then player_state := 3
+	if temp == 3 then player_state := 2
+
+	get_player_sprite
+	sprite px py 8
+return
+
+# in:  
+# out: 
+: move_player_left
+	temp := player_position
+	index_to_pxpy
+	
+	get_player_sprite
+	sprite px py 8
+
+	if px != 0 begin
+		v1 := 3
+		check_for_obstacle
+		if vf == 0 begin			
+			px -= 8
+			player_position -= 1
+		end
+	end
+	
+	temp := player_state
+	if temp == 0 then player_state := 1
+	if temp == 1 then player_state := 0
+	if temp == 2 then player_state := 1
+	if temp == 3 then player_state := 0
+
+	get_player_sprite
+	sprite px py 8
+return
+
+# in: 
+# out:
+: user_input
+	temp := 5
+	if temp key then move_player_up
+	temp := 7
+	if temp key then move_player_left
+	temp := 8
+	if temp key then move_player_down
+	temp := 9
+	if temp key then move_player_right
+return
+
+: reward_place
+	px := 56
+	py := 0
+	i := reward
+	sprite px py 8
+return
+
+: enemy_place
+	enemy_state := 0
+	px := 0
+	py := 0
+	pxpy_to_index
+	enemy_position := temp	
+	get_enemy_sprite
+	sprite px py 8
+return
+
+: player_place
+	player_state := 2
+	px := 16
+	py := 24
+	pxpy_to_index
+	player_position := temp
+	get_player_sprite
+	sprite px py 8
+return
+
+: reward_idle
+	px := 56
+	py := 0
+	i := reward	
+	sprite px py 8
+return
+
+: enemy_idle
+	temp := enemy_position
+	index_to_pxpy
+	
+	# erase
+	get_enemy_sprite
+	sprite px py 8
+	
+	# update state
+	temp := enemy_state
+	if temp == 0 then enemy_state := 1
+	if temp == 1 then enemy_state := 0
+	if temp == 2 then enemy_state := 3
+	if temp == 3 then enemy_state := 2
+	
+	# draw
+	get_enemy_sprite
+	sprite px py 8
+return
+
+: player_idle
+	temp := player_position
+	index_to_pxpy
+	
+	# erase
+	get_player_sprite
+	sprite px py 8
+
+	# update state
+	temp := player_state
+	if temp == 0 then player_state := 1
+	if temp == 1 then player_state := 0
+	if temp == 2 then player_state := 3
+	if temp == 3 then player_state := 2
+
+	# draw
+	get_player_sprite
+	sprite px py 8
+return 
+
+: idle
+	delta += speed
+	if vf == 1 begin
+		enemy_idle
+		player_idle
+		reward_idle
+	end
+return
+
+: sync
+	loop
+		vf := delay
+		if vf != 0 then
+	again
+	vf := 1
+	delay := vf
+return 
+
+: main_loop
+	loop
+		user_input
+		idle
+		sync
+	again
+return 
+
+: main
+	speed := 35
+	delta := 0
+	
+	draw_map
+	reward_place
+	enemy_place
+	player_place
+	
+	main_loop
+return

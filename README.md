@@ -1,2 +1,1 @@
-# rusty_chip8_emu
-Chip8 emulator in Rust
+# Chip8 Emulator

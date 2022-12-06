@@ -7,7 +7,7 @@ const SCALE: u32 = 15;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const TICKS_PER_FRAME: usize = 8;
-const DEFAULT_GAMES_FOLDER_PATH: &str = "/home/jordan/RustProjs/chip8/tests/roms/";
+const DEFAULT_GAMES_FOLDER_PATH: &str = "/home/jordan/RustProjs/chip8/games/roms/";
 
 fn draw_screen(emulator: &mut Emulator, canvas: &mut Canvas<Window>) {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
@@ -54,10 +54,10 @@ fn translate_key_input(key: Keycode) -> Option<usize> {
     }
 }
 
-fn setup_canvas(sdl_context: &Sdl) -> WindowCanvas {
+fn setup_canvas(sdl_context: &Sdl, game_path: &str) -> WindowCanvas {
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
-        .window("Chip-8 Emulator", WINDOW_WIDTH, WINDOW_HEIGHT)
+        .window(game_path, WINDOW_WIDTH, WINDOW_HEIGHT)
         .position_centered()
         .opengl()
         .build()
@@ -200,7 +200,8 @@ fn main() {
     if !game_full_path.is_empty() {
         let sdl_context: Sdl = sdl2::init().unwrap();
 
-        let mut canvas: WindowCanvas = setup_canvas(&sdl_context);
+        let game_name = game_full_path.split('/').last().unwrap();
+        let mut canvas: WindowCanvas = setup_canvas(&sdl_context, game_name);
         let mut event_pump: EventPump = sdl_context.event_pump().unwrap();
 
         let mut game: Emulator = load_game(game_full_path.as_str());
